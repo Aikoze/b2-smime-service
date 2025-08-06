@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Certificates (sensitive data)
+*.p12
+*.pfx
+*.key
+private/
+
+# Test files
+coverage/
+.nyc_output/
+
+# Build files
+dist/
+build/
+
+# Temporary files
+tmp/
+temp/
+
+# PM2
+.pm2/
+
+# Docker
+.dockerignore
