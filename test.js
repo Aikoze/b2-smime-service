@@ -19,7 +19,7 @@ const gzip = promisify(zlib.gzip);
  * Fonction pour appeler le service d'encryption
  */
 async function callEncryptionService(params) {
-    const response = await fetch('http://localhost:3001/prepare-and-encrypt', {
+    const response = await fetch('https://b2-smime-service-production.up.railway.app/prepare-and-encrypt', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -160,7 +160,7 @@ async function testDoubleContentDescription() {
 // Vérifier que le service est en ligne
 async function checkService() {
     try {
-        const response = await fetch('http://localhost:3001/health');
+        const response = await fetch('https://b2-smime-service-production.up.railway.app/health');
         if (!response.ok) {
             throw new Error('Service non disponible');
         }

@@ -6,8 +6,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "start:with-init": "node init-certificates.js && node index.js",
     "dev": "DEBUG=true node index.js",
-    "test": "node test.js"
+    "test": "node test.js",
+    "init": "node init-certificates.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import forge from 'node-forge';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fs from 'fs';
@@ -175,6 +176,10 @@ app.post('/encrypt', authenticate, async (req, res) => {
  */
 app.post('/prepare-and-encrypt', authenticate, async (req, res) => {
   try {
+    console.log('\n========================================');
+    console.log('📨 Nouvelle requête /prepare-and-encrypt');
+    console.log(`⏰ ${new Date().toISOString()}`);
+    
     const { 
       from, 
       to, 
@@ -186,8 +191,17 @@ app.post('/prepare-and-encrypt', authenticate, async (req, res) => {
       messageId = `<${Date.now()}.${Math.random().toString(36).substring(2)}@heroad.io>`
     } = req.body;
     
+    console.log('📋 Paramètres reçus:');
+    console.log(`   - From: ${from}`);
+    console.log(`   - To: ${to}`);
+    console.log(`   - Subject: ${subject}`);
+    console.log(`   - FileName: ${fileName}`);
+    console.log(`   - Organisme: ${organisme}`);
+    console.log(`   - FileContent size: ${fileContent ? fileContent.length : 0} chars`);
+    
     // Valider les paramètres requis
     if (!from || !to || !subject || !fileContent || !fileName || !organisme) {
+      console.error('❌ Paramètres manquants');
       return res.status(400).json({ 
         error: 'Paramètres manquants',
         required: ['from', 'to', 'subject', 'fileContent', 'fileName', 'organisme']
@@ -207,6 +221,8 @@ app.post('/prepare-and-encrypt', authenticate, async (req, res) => {
     attachmentPart += base64Lines.join('\r\n');
     
     // Récupérer le certificat CPAM
+    console.log(`🔍 Recherche du certificat pour l'organisme ${organisme}...`);
+    
     // D'abord essayer avec le code fourni, puis avec 01 + code si c'est un code court
     let certKey = `CPAM_CERT_${organisme}`;
     let cpamCert = process.env[certKey];
@@ -215,18 +231,26 @@ app.post('/prepare-and-encrypt', authenticate, async (req, res) => {
     if (!cpamCert && organisme.length === 3) {
       certKey = `CPAM_CERT_01${organisme}`;
       cpamCert = process.env[certKey];
+      if (cpamCert) {
+        console.log(`📜 Certificat trouvé avec le préfixe 01: ${certKey}`);
+      }
+    } else if (cpamCert) {
+      console.log(`📜 Certificat trouvé: ${certKey}`);
     }
     
     if (!cpamCert) {
       // Essayer de récupérer le certificat via le gestionnaire
+      console.log('🌐 Certificat non trouvé en cache, tentative de récupération...');
       try {
         cpamCert = await certificateManager.getCertificate(organisme);
         
         // Le gestionnaire s'occupe du cache et du stockage
         const fullCode = organisme.length === 3 ? `01${organisme}` : organisme;
         process.env[`CPAM_CERT_${fullCode}`] = cpamCert;
+        console.log(`✅ Certificat récupéré et mis en cache: CPAM_CERT_${fullCode}`);
         
       } catch (fetchError) {
+        console.error(`❌ Impossible de récupérer le certificat: ${fetchError.message}`);
         return res.status(404).json({ 
           error: `Certificat non trouvé pour l'organisme ${organisme}`,
           fetch_error: fetchError.message
@@ -235,9 +259,12 @@ app.post('/prepare-and-encrypt', authenticate, async (req, res) => {
     }
     
     // Chiffrer uniquement la partie attachment
+    console.log('🔐 Début du chiffrement S/MIME...');
     const encryptedContent = encryptSMIME(attachmentPart, cpamCert);
+    console.log(`✅ Chiffrement réussi (taille: ${encryptedContent.length} chars)`);
     
     // Construire le message MIME complet EXACTEMENT comme le PHP
+    console.log('📝 Construction du message MIME complet...');
     let fullMessage = '';
     
     // Headers principaux EXACTEMENT comme le mail fonctionnel
@@ -260,17 +287,85 @@ app.post('/prepare-and-encrypt', authenticate, async (req, res) => {
     fullMessage += '\r\n'; // Ligne vide OBLIGATOIRE
     fullMessage += encryptedContent;
     
-    res.json({
-      success: true,
-      organisme: organisme,
-      encrypted: true,
-      message_id: messageId,
-      mime_message: fullMessage,
-      timestamp: new Date().toISOString()
-    });
+    // Envoi du mail via SendGrid
+    try {
+      console.log(`📧 Tentative d'envoi de mail - From: ${from}, To: ${to}, Organisme: ${organisme}`);
+      
+      const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+      
+      if (!SENDGRID_API_KEY) {
+        console.error('❌ SENDGRID_API_KEY non configurée dans les variables d\'environnement');
+        throw new Error('SENDGRID_API_KEY non configurée');
+      }
+      
+      console.log('🔌 Connexion au serveur SMTP SendGrid...');
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.sendgrid.net',
+        port: 587,
+        secure: false,
+        auth: {
+          user: 'apikey',
+          pass: SENDGRID_API_KEY
+        }
+      });
+
+      console.log(`📤 Envoi du message chiffré (taille: ${fullMessage.length} octets)...`);
+      const info = await transporter.sendMail({
+        envelope: {
+          from: from,
+          to: to
+        },
+        raw: fullMessage
+      });
+      
+      console.log('✅ Mail envoyé avec succès!');
+      console.log(`   - Message ID: ${info.messageId}`);
+      console.log(`   - Accepté: ${JSON.stringify(info.accepted)}`);
+      console.log(`   - Rejeté: ${JSON.stringify(info.rejected)}`);
+      console.log(`   - Réponse serveur: ${info.response}`);
+      
+      // Retourner les informations du mail envoyé
+      res.json({
+        success: true,
+        organisme: organisme,
+        encrypted: true,
+        message_id: messageId,
+        mime_message: fullMessage,
+        email_sent: true,
+        email_info: {
+          messageId: info.messageId,
+          accepted: info.accepted,
+          rejected: info.rejected,
+          response: info.response
+        },
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (emailError) {
+      console.error('❌ Erreur lors de l\'envoi du mail:', emailError);
+      console.error('   - Type d\'erreur:', emailError.name);
+      console.error('   - Message:', emailError.message);
+      console.error('   - Stack:', emailError.stack);
+      
+      // Retourner le message chiffré même si l'envoi a échoué
+      res.status(500).json({
+        success: false,
+        organisme: organisme,
+        encrypted: true,
+        message_id: messageId,
+        mime_message: fullMessage,
+        email_sent: false,
+        email_error: emailError.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    console.log('========================================\n');
     
   } catch (error) {
-    console.error('Erreur:', error);
+    console.error('❌ Erreur générale dans /prepare-and-encrypt:', error);
+    console.error('   - Stack:', error.stack);
+    console.log('========================================\n');
     res.status(500).json({ 
       error: error.message,
       timestamp: new Date().toISOString()
