@@ -111,5 +111,4 @@ console.log(`  - ${copiedCount} certificat(s) copié(s)`);
 console.log(`  - ${existingCount} certificat(s) déjà présent(s)`);
 console.log('  - Volume prêt pour utilisation\n');
 
-// Succès
-process.exit(0);
+// Ne pas faire process.exit() car le script est appelé avant le démarrage du serveur

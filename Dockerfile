@@ -20,8 +20,7 @@ RUN npm ci --omit=dev
 # Copier le code source
 COPY . .
 
-# S'assurer que les scripts sont exécutables
-RUN chmod +x init-certificates.js
+# Pas besoin de chmod +x pour les scripts Node.js
 
 # Exposer le port
 EXPOSE 3001
